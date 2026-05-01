@@ -1,0 +1,110 @@
+body {
+    background: #1a1a1a;
+    color: #e0e0e0;
+}
+
+.navbar-brand {
+    font-family: 'Courier New', Courier, monospace;
+    font-weight: 700;
+    letter-spacing: 1px;
+}
+
+#log-output {
+    background: #0d0d0d;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.80rem;
+    height: 65vh;
+    overflow-y: scroll;
+    padding: 8px 12px;
+    border: 1px solid #333;
+    border-radius: 4px;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+.log-line {
+    padding: 1px 0;
+    line-height: 1.5;
+    border-bottom: 1px solid #111;
+}
+
+.log-info  { color: #c8c8c8; }
+.log-warn  { color: #e6c040; }
+.log-error { color: #ff6b6b; font-weight: 600; }
+
+mark {
+    background: #3a3a00;
+    color: #ffe066;
+    border-radius: 2px;
+    padding: 0 2px;
+}
+
+.status-badge {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-right: 6px;
+}
+
+.status-connected  .status-badge { background: #4caf50; }
+.status-connecting .status-badge { background: #ff9800; }
+.status-error      .status-badge { background: #f44336; }
+
+#controls {
+    background: #242424;
+    border: 1px solid #333;
+    border-radius: 4px;
+    padding: 12px 16px;
+    margin-bottom: 10px;
+}
+
+#controls label { color: #aaa; font-size: 0.85rem; }
+
+.btn-analyze-disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+}
+
+#stats-bar {
+    font-size: 0.78rem;
+    color: #777;
+    padding: 4px 0;
+}
+
+#analysis-result {
+    white-space: pre-wrap;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.85rem;
+    background: #0d0d0d;
+    color: #e0e0e0;
+    border-radius: 4px;
+    padding: 12px;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.modal-content {
+    background: #1e1e1e;
+    border: 1px solid #444;
+    color: #e0e0e0;
+}
+
+.modal-header, .modal-footer {
+    border-color: #333;
+}
+
+.form-control, .form-select {
+    background: #2a2a2a;
+    border-color: #444;
+    color: #e0e0e0;
+}
+
+.form-control:focus, .form-select:focus {
+    background: #2a2a2a;
+    border-color: #666;
+    color: #e0e0e0;
+    box-shadow: none;
+}
+
+.form-check-input { border-color: #555; }
