@@ -74,6 +74,84 @@ def refresh_logs():
     return jsonify({'log_names': registry.all_names()})
 
 
+@api_bp.route('/agent/push', methods=['POST'])
+def agent_push():
+    """
+    Receives a single log line from a remote log agent.
+    Body: {"server": "web-01", "log_name": "access", "line": "..."}
+    Header: X-Agent-Key must match AGENT_SECRET.
+    """
+    key = request.headers.get('X-Agent-Key', '')
+    if key != current_app.config['AGENT_SECRET']:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    data = request.get_json(force=True, silent=True) or {}
+    server   = data.get('server', '').strip()
+    log_name = data.get('log_name', '').strip()
+    line     = data.get('line', '').strip()
+
+    if not server or not log_name or not line:
+        return jsonify({'error': 'server, log_name, and line are required'}), 400
+
+    agent_registry = current_app.extensions['agent_registry']
+    agent_registry.push(server, log_name, line)
+    return '', 204
+
+
+@api_bp.route('/stream/<server>/<log_name>')
+def stream_agent(server, log_name):
+    """
+    SSE endpoint for a remote agent's log stream.
+    server    — server name as registered by the agent
+    log_name  — log name (access, error, etc.)
+    """
+    agent_registry = current_app.extensions['agent_registry']
+
+    if 'error' in log_name:
+        from app.services.log_parser import parse_error_line as parse
+    else:
+        from app.services.log_parser import parse_access_line as parse
+
+    def generate():
+        q = agent_registry.subscribe(server, log_name)
+        try:
+            while True:
+                try:
+                    raw_line = q.get(timeout=15)
+                    parsed   = parse(raw_line)
+                    payload  = json.dumps(parsed)
+                    yield f'data: {payload}\n\n'
+                except _queue.Empty:
+                    yield ': heartbeat\n\n'
+        except GeneratorExit:
+            pass
+        finally:
+            agent_registry.unsubscribe(server, log_name, q)
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control':     'no-cache',
+            'X-Accel-Buffering': 'no',
+        },
+    )
+
+
+@api_bp.route('/servers')
+def list_servers():
+    """Returns all server names that have connected via agent."""
+    agent_registry = current_app.extensions['agent_registry']
+    return jsonify({'servers': agent_registry.registered_servers()})
+
+
+@api_bp.route('/servers/<server>/logs')
+def list_server_logs(server):
+    """Returns log names registered for a specific remote server."""
+    agent_registry = current_app.extensions['agent_registry']
+    return jsonify({'log_names': agent_registry.registered_logs(server)})
+
+
 @api_bp.route('/analyze', methods=['POST'])
 def analyze():
     """

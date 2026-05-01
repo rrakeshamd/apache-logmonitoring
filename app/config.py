@@ -19,6 +19,9 @@ class Config:
     # SSE per-client queue depth (drop oldest if client is slow)
     SSE_QUEUE_MAXSIZE = 500
 
+    # Remote agent authentication — agents must send this in X-Agent-Key header
+    AGENT_SECRET = os.environ.get('AGENT_SECRET', 'changeme')
+
 
 class DevelopmentConfig(Config):
     DEBUG = True

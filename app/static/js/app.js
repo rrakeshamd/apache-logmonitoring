@@ -1,12 +1,14 @@
 'use strict';
 
 // ── State ────────────────────────────────────────────────────────────────────
-let eventSource  = null;
-let currentLog   = 'access';
-let llmEnabled   = false;
-let totalLines   = 0;
-let visibleLines = 0;
-let llmBuffer    = [];   // rolling window of raw strings for LLM analysis
+let eventSource    = null;
+let currentLog     = 'access';
+let currentServer  = '__local__';  // '__local__' = local logs; otherwise remote server name
+let llmEnabled     = false;
+let totalLines     = 0;
+let visibleLines   = 0;
+let llmBuffer      = [];   // rolling window of raw strings for LLM analysis
+let serverPollTimer = null;
 
 const MAX_LINES      = 2000;
 const LLM_BUFFER_MAX = 100;
@@ -38,7 +40,46 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch (e) {
         console.error('Failed to fetch /api/config', e);
     }
+
+    // Poll for newly-connected remote agents every 10s
+    await refreshServers();
+    serverPollTimer = setInterval(refreshServers, 10000);
 });
+
+// ── Server selector ──────────────────────────────────────────────────────────
+async function refreshServers() {
+    try {
+        const resp    = await fetch('/api/servers');
+        const data    = await resp.json();
+        populateServerSelector(data.servers || []);
+    } catch (e) {
+        console.error('Failed to fetch /api/servers', e);
+    }
+}
+
+function populateServerSelector(serverNames) {
+    const sel  = document.getElementById('server-selector');
+    const prev = sel.value;
+
+    // Preserve "Local" option; add/update remote servers
+    const existing = new Set(
+        Array.from(sel.options).map(o => o.value)
+    );
+
+    serverNames.forEach(name => {
+        if (!existing.has(name)) {
+            const opt = document.createElement('option');
+            opt.value = name;
+            opt.text  = name;
+            sel.appendChild(opt);
+        }
+    });
+
+    // Restore previous selection if still present
+    if (prev && Array.from(sel.options).some(o => o.value === prev)) {
+        sel.value = prev;
+    }
+}
 
 // ── Log selector ─────────────────────────────────────────────────────────────
 function populateLogSelector(names) {
@@ -103,7 +144,11 @@ function connectSSE(logName) {
     }
     setStatus('connecting');
 
-    eventSource = new EventSource(`/api/stream/${logName}`);
+    const url = currentServer === '__local__'
+        ? `/api/stream/${logName}`
+        : `/api/stream/${encodeURIComponent(currentServer)}/${logName}`;
+
+    eventSource = new EventSource(url);
 
     eventSource.onopen = () => setStatus('connected');
 
@@ -220,6 +265,34 @@ function enforceMaxLines() {
 
 // ── Controls setup ────────────────────────────────────────────────────────────
 function setupControls() {
+    // Server selector change
+    document.getElementById('server-selector').addEventListener('change', async (e) => {
+        currentServer = e.target.value;
+        clearOutput();
+
+        if (currentServer === '__local__') {
+            // Restore local log names from /api/config
+            try {
+                const resp = await fetch('/api/config');
+                const cfg  = await resp.json();
+                populateLogSelector(cfg.log_names);
+            } catch {}
+        } else {
+            // Fetch log names available on the remote server
+            try {
+                const resp = await fetch(`/api/servers/${encodeURIComponent(currentServer)}/logs`);
+                const data = await resp.json();
+                const names = data.log_names && data.log_names.length
+                    ? data.log_names
+                    : ['access', 'error'];   // fallback defaults
+                populateLogSelector(names);
+            } catch {
+                populateLogSelector(['access', 'error']);
+            }
+        }
+        connectSSE(currentLog);
+    });
+
     // Log selector change
     setupLogSelectorChange();
 
