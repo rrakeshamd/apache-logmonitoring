@@ -9,9 +9,13 @@ let totalLines     = 0;
 let visibleLines   = 0;
 let llmBuffer      = [];   // rolling window of raw strings for LLM analysis
 let serverPollTimer = null;
+let streamMode         = 'single';   // 'single' | 'all'
+let domainColorMap     = {};         // domain -> CSS color string
+let activeDomainFilter = null;       // null = show all; string = filter to that domain
 
 const MAX_LINES      = 2000;
 const LLM_BUFFER_MAX = 100;
+const DOMAIN_COLORS  = ['#61afef', '#98c379', '#e5c07b', '#c678dd', '#56b6c2', '#e06c75', '#d19a66', '#abb2bf'];
 
 const filters = {
     levels:      new Set(['info', 'warn', 'error']),
@@ -30,11 +34,16 @@ const analyzeBtn   = () => document.getElementById('btn-analyze');
 document.addEventListener('DOMContentLoaded', async () => {
     setupControls();
 
-    // Fetch server config (available logs, LLM flag)
+    // Fetch server config and log info in parallel
     try {
-        const resp = await fetch('/api/config');
-        const cfg  = await resp.json();
+        const [cfgResp, logsResp] = await Promise.all([
+            fetch('/api/config'),
+            fetch('/api/logs'),
+        ]);
+        const cfg  = await cfgResp.json();
+        const logs = await logsResp.json();
         llmEnabled = cfg.llm_enabled;
+        buildDomainColorMap(logs);
         populateLogSelector(cfg.log_names);
         connectSSE(currentLog);
     } catch (e) {
@@ -136,6 +145,42 @@ async function refreshLogs() {
     }
 }
 
+// ── Domain color map ──────────────────────────────────────────────────────────
+function buildDomainColorMap(logInfoList) {
+    const domains = [...new Set(logInfoList.map(l => l.domain).filter(Boolean))].sort();
+    domainColorMap = {};
+    domains.forEach((d, i) => { domainColorMap[d] = DOMAIN_COLORS[i % DOMAIN_COLORS.length]; });
+}
+
+// ── Domain filter bar ─────────────────────────────────────────────────────────
+function updateDomainFilterButtons() {
+    const bar = document.getElementById('domain-filter-bar');
+    bar.innerHTML = '';
+
+    const allBtn = makeFilterPill('All Domains', null, '#abb2bf');
+    bar.appendChild(allBtn);
+
+    Object.entries(domainColorMap).sort().forEach(([domain, color]) => {
+        bar.appendChild(makeFilterPill(domain, domain, color));
+    });
+}
+
+function makeFilterPill(label, domain, color) {
+    const btn = document.createElement('button');
+    btn.className = 'domain-pill';
+    btn.textContent = label;
+    btn.style.borderColor = color;
+    btn.style.color = color;
+    if (activeDomainFilter === domain) btn.classList.add('active');
+    btn.addEventListener('click', () => {
+        activeDomainFilter = domain;
+        document.querySelectorAll('.domain-pill').forEach(p => p.classList.remove('active'));
+        btn.classList.add('active');
+        applyAllFilters();
+    });
+    return btn;
+}
+
 // ── SSE connection ────────────────────────────────────────────────────────────
 function connectSSE(logName) {
     if (eventSource) {
@@ -144,9 +189,14 @@ function connectSSE(logName) {
     }
     setStatus('connecting');
 
-    const url = currentServer === '__local__'
-        ? `/api/stream/${logName}`
-        : `/api/stream/${encodeURIComponent(currentServer)}/${logName}`;
+    let url;
+    if (streamMode === 'all') {
+        url = '/api/stream/all';
+    } else if (currentServer === '__local__') {
+        url = `/api/stream/${logName}`;
+    } else {
+        url = `/api/stream/${encodeURIComponent(currentServer)}/${logName}`;
+    }
 
     eventSource = new EventSource(url);
 
@@ -178,13 +228,28 @@ function connectSSE(logName) {
 // ── Append a log line to the DOM ──────────────────────────────────────────────
 function appendLine(entry) {
     const div = document.createElement('div');
-    div.className        = `log-line log-${entry.level}`;
-    div.dataset.level    = entry.level;
-    div.dataset.status   = entry.status != null ? String(entry.status) : '';
-    div.dataset.raw      = entry.raw.toLowerCase();
+    div.className      = `log-line log-${entry.level}`;
+    div.dataset.level  = entry.level;
+    div.dataset.status = entry.status != null ? String(entry.status) : '';
+    div.dataset.raw    = entry.raw.toLowerCase();
+    div.dataset.domain = entry.domain || '';
 
-    // Apply keyword highlight if active
-    if (filters.keyword) {
+    if (streamMode === 'all' && entry.domain) {
+        const color = domainColorMap[entry.domain] || '#abb2bf';
+        const badge = document.createElement('span');
+        badge.className = 'domain-badge';
+        badge.style.color = color;
+        badge.style.borderColor = color;
+        badge.textContent = entry.domain;
+        const text = document.createElement('span');
+        if (filters.keyword) {
+            text.innerHTML = highlightKeyword(escapeHtml(entry.raw), filters.keyword);
+        } else {
+            text.textContent = entry.raw;
+        }
+        div.appendChild(badge);
+        div.appendChild(text);
+    } else if (filters.keyword) {
         div.innerHTML = highlightKeyword(escapeHtml(entry.raw), filters.keyword);
     } else {
         div.textContent = entry.raw;
@@ -219,7 +284,8 @@ function applyFilterToEl(el) {
     const levelOk  = filters.levels.has(el.dataset.level);
     const statusOk = matchesStatusFilter(el.dataset.status);
     const keyOk    = !filters.keyword || el.dataset.raw.includes(filters.keyword);
-    el.style.display = (levelOk && statusOk && keyOk) ? '' : 'none';
+    const domainOk = !activeDomainFilter || el.dataset.domain === activeDomainFilter;
+    el.style.display = (levelOk && statusOk && keyOk && domainOk) ? '' : 'none';
 }
 
 function applyAllFilters() {
@@ -330,6 +396,22 @@ function setupControls() {
 
     // Clear button
     document.getElementById('btn-clear').addEventListener('click', clearOutput);
+
+    // Stream All toggle
+    document.getElementById('btn-stream-all').addEventListener('click', () => {
+        streamMode = streamMode === 'all' ? 'single' : 'all';
+        const btn = document.getElementById('btn-stream-all');
+        btn.classList.toggle('active', streamMode === 'all');
+        btn.textContent = streamMode === 'all' ? 'Viewing All Domains' : 'Stream All Domains';
+        clearOutput();
+        activeDomainFilter = null;
+        if (streamMode === 'all') {
+            updateDomainFilterButtons();
+        } else {
+            document.getElementById('domain-filter-bar').innerHTML = '';
+        }
+        connectSSE(currentLog);
+    });
 
     // Analyze button — wired but disabled when LLM is off
     const btn = analyzeBtn();

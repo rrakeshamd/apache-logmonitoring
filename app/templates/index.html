@@ -106,9 +106,13 @@
               {% if not llm_enabled %}disabled title="LLM integration is disabled. Set LLM_ENABLED=true in .env to enable."{% endif %}>
         Analyze with AI
       </button>
+      <button id="btn-stream-all" class="btn btn-sm btn-outline-primary">Stream All Domains</button>
     </div>
 
   </div><!-- /controls -->
+
+  <!-- Domain filter bar (visible only in Stream All mode) -->
+  <div id="domain-filter-bar" class="d-flex flex-wrap gap-1 mt-2 mb-1"></div>
 
   <!-- Stats bar -->
   <div id="stats-bar">Waiting for log lines…</div>

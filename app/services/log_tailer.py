@@ -119,7 +119,8 @@ class LogTailerRegistry:
             return sorted(self._tailers.keys())
 
     def all_info(self):
-        """Return list of dicts with name, path, size_bytes for each tailer."""
+        """Return list of dicts with name, path, size_bytes, domain, logtype for each tailer."""
+        from app.services.log_parser import parse_log_name
         result = []
         with self._lock:
             for name, tailer in sorted(self._tailers.items()):
@@ -127,5 +128,19 @@ class LogTailerRegistry:
                     size = os.path.getsize(tailer.log_path)
                 except OSError:
                     size = 0
-                result.append({'name': name, 'path': tailer.log_path, 'size_bytes': size})
+                meta = parse_log_name(name)
+                result.append({
+                    'name': name, 'path': tailer.log_path, 'size_bytes': size,
+                    'domain': meta['domain'], 'logtype': meta['logtype'],
+                })
         return result
+
+    def all_tailers(self):
+        """Return list of (name, domain, logtype, tailer) for every registered log."""
+        from app.services.log_parser import parse_log_name
+        with self._lock:
+            result = []
+            for name, tailer in sorted(self._tailers.items()):
+                meta = parse_log_name(name)
+                result.append((name, meta['domain'], meta['logtype'], tailer))
+            return result

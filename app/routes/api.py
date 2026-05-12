@@ -1,9 +1,71 @@
 import json
 import queue as _queue
+import threading as _threading
 
 from flask import Blueprint, Response, current_app, request, jsonify, stream_with_context
 
 api_bp = Blueprint('api', __name__)
+
+
+@api_bp.route('/stream/all')
+def stream_all():
+    """
+    Multiplexed SSE endpoint. Streams ALL discovered local log files simultaneously.
+    Each event has the standard parsed fields plus domain, logtype, and log_name.
+    """
+    registry = current_app.extensions['log_tailer_registry']
+    tailers  = registry.all_tailers()
+    if not tailers:
+        return jsonify({'error': 'No log files discovered'}), 404
+
+    from app.services.log_parser import parse_access_line, parse_error_line
+    merged_q   = _queue.Queue(maxsize=2000)
+    stop_event = _threading.Event()
+
+    def make_feeder(name, domain, logtype, tailer):
+        parse    = parse_error_line if logtype == 'error' else parse_access_line
+        client_q = tailer.subscribe()
+
+        def feeder():
+            try:
+                while not stop_event.is_set():
+                    try:
+                        raw = client_q.get(timeout=2)
+                    except _queue.Empty:
+                        continue
+                    parsed = parse(raw)
+                    parsed['domain']   = domain
+                    parsed['logtype']  = logtype
+                    parsed['log_name'] = name
+                    try:
+                        merged_q.put_nowait(parsed)
+                    except _queue.Full:
+                        pass
+            finally:
+                tailer.unsubscribe(client_q)
+
+        _threading.Thread(target=feeder, daemon=True, name=f'feeder-{name}').start()
+
+    for args in tailers:
+        make_feeder(*args)
+
+    def generate():
+        try:
+            while True:
+                try:
+                    yield f'data: {json.dumps(merged_q.get(timeout=15))}\n\n'
+                except _queue.Empty:
+                    yield ': heartbeat\n\n'
+        except GeneratorExit:
+            pass
+        finally:
+            stop_event.set()
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype='text/event-stream',
+        headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'},
+    )
 
 
 @api_bp.route('/stream/<log_name>')

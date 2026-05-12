@@ -1,5 +1,24 @@
 import re
 
+_LOG_NAME_RE = re.compile(r'^(?P<domain>.+?)-(?P<logtype>access|error)$')
+
+
+def parse_log_name(log_name: str) -> dict:
+    """Extract domain and logtype from a log filename stem.
+
+    Examples:
+        'example.com-access' -> {'domain': 'example.com', 'logtype': 'access'}
+        'access'             -> {'domain': None, 'logtype': 'access'}
+        'other'              -> {'domain': None, 'logtype': None}
+    """
+    m = _LOG_NAME_RE.match(log_name)
+    if m:
+        return {'domain': m.group('domain'), 'logtype': m.group('logtype')}
+    if log_name in ('access', 'error'):
+        return {'domain': None, 'logtype': log_name}
+    return {'domain': None, 'logtype': None}
+
+
 # Apache Combined Log Format
 _ACCESS_RE = re.compile(
     r'(?P<host>\S+)\s+\S+\s+(?P<user>\S+)\s+'
