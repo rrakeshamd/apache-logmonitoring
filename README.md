@@ -8,6 +8,9 @@ Stream, filter, and analyze Apache access and error logs from **local and remote
 ## Features
 
 - **Live log streaming** via Server-Sent Events (SSE) — no polling, no page refresh
+- **Multi-domain streaming** — stream all domain log files simultaneously in one view, each line labeled with a colored domain badge
+- **Domain filter bar** — click a domain pill to isolate traffic from a single virtualhost
+- **Auto-discovery** — all `*.log` files in `LOG_DIR` are picked up automatically; hit ⟳ to detect new files at runtime
 - **Multi-server support** — connect remote Linux servers using the lightweight log agent
 - **Server selector** — switch between local and remote server log streams from the GUI
 - **Log file selector** — monitor access logs, error logs, or any `*.log` file in the log directory
@@ -30,14 +33,31 @@ Remote Server A          Remote Server B
        ▼                        ▼
 ┌──────────────────────────────────────┐
 │       Central Flask Server           │
+│  LogTailerRegistry (local *.log)     │
 │  AgentRegistry (per-server queues)   │
+│  SSE: /api/stream/<log>              │
+│  SSE: /api/stream/all  ← NEW         │
 │  SSE: /api/stream/<server>/<log>     │
 └─────────────────┬────────────────────┘
                   │ SSE
                   ▼
             Browser GUI
-          (server selector)
+    (server selector · Stream All Domains)
 ```
+
+### Multi-domain streaming (`/api/stream/all`)
+
+When Apache is configured to write **separate log files per virtualhost** (e.g. `example.com-access.log`, `api.example.com-access.log`), the app discovers all of them automatically and can stream them all at once.
+
+```
+LOG_DIR/
+├── example.com-access.log      → domain: example.com,     logtype: access
+├── example.com-error.log       → domain: example.com,     logtype: error
+├── api.example.com-access.log  → domain: api.example.com, logtype: access
+└── shop.example.com-access.log → domain: shop.example.com, logtype: access
+```
+
+Each SSE event from `/api/stream/all` carries extra fields: `domain`, `logtype`, `log_name`. The frontend renders a colored badge before each line and shows a domain filter bar.
 
 ---
 
@@ -159,12 +179,13 @@ All settings are controlled via `.env`:
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/api/config` | App config — available log names, LLM status |
-| `GET` | `/api/stream/<log_name>` | SSE stream for a local log |
+| `GET` | `/api/stream/<log_name>` | SSE stream for a single local log |
+| `GET` | `/api/stream/all` | SSE stream merging **all** local logs simultaneously (domain-tagged events) |
 | `GET` | `/api/stream/<server>/<log_name>` | SSE stream for a remote agent's log |
 | `GET` | `/api/servers` | List of connected remote servers |
 | `GET` | `/api/servers/<server>/logs` | Log names available for a remote server |
 | `POST` | `/api/agent/push` | Receive a log line from a remote agent |
-| `GET` | `/api/logs` | List local log files with paths and sizes |
+| `GET` | `/api/logs` | List local log files with paths, sizes, domain, and logtype |
 | `POST` | `/api/refresh` | Rescan `LOG_DIR` for new log files |
 | `POST` | `/api/analyze` | Analyze log lines with LLM — returns issues, security alerts, performance notes, and recommended actions |
 
@@ -202,6 +223,14 @@ apache-logmonitoring/
 ---
 
 ## Changelog
+
+### v4.0 — Multi-Domain Simultaneous Streaming
+- **New:** `Stream All Domains` toggle button — streams every `*.log` file in `LOG_DIR` simultaneously in one view
+- **New:** `/api/stream/all` SSE endpoint — multiplexes all local log tailers into one stream using per-tailer feeder threads; each event carries `domain`, `logtype`, and `log_name` fields
+- **New:** Colored domain badge before each log line when in Stream All mode
+- **New:** Domain filter bar — click a pill to isolate a single virtualhost; click `All Domains` to restore full view
+- **New:** `parse_log_name()` — extracts domain and logtype from filenames like `example.com-access.log`
+- **Improved:** `/api/logs` response now includes `domain` and `logtype` per log file
 
 ### v3.0 — AMD LLM Integration
 - **Changed:** LLM backend switched from Anthropic/Claude to AMD internal OpenAI-compatible API (`https://llm-api.amd.com/OnPrem`)
