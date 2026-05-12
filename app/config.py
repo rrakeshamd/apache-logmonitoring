@@ -11,10 +11,10 @@ class Config:
     LOG_DIR = os.environ.get('LOG_DIR', '/var/log/apache2')
 
     # LLM integration — disabled by default
-    LLM_ENABLED       = os.environ.get('LLM_ENABLED', 'false').lower() == 'true'
-    ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY', '')
-    LLM_MODEL         = os.environ.get('LLM_MODEL', 'claude-3-5-haiku-20241022')
-    LLM_CHUNK_SIZE    = int(os.environ.get('LLM_CHUNK_SIZE', '20'))
+    LLM_ENABLED          = os.environ.get('LLM_ENABLED', 'false').lower() == 'true'
+    AMD_SUBSCRIPTION_KEY = os.environ.get('AMD_SUBSCRIPTION_KEY', '')
+    LLM_MODEL            = os.environ.get('LLM_MODEL', 'GPT-oss-20B')
+    LLM_CHUNK_SIZE       = int(os.environ.get('LLM_CHUNK_SIZE', '20'))
 
     # SSE per-client queue depth (drop oldest if client is slow)
     SSE_QUEUE_MAXSIZE = 500

@@ -13,7 +13,7 @@ Stream, filter, and analyze Apache access and error logs from **local and remote
 - **Log file selector** — monitor access logs, error logs, or any `*.log` file in the log directory
 - **Real-time filters** — filter by severity level (info / warn / error), HTTP status group (4xx / 5xx), and keyword search with live highlighting
 - **Auto-scroll** — always follow the latest log lines
-- **AI analysis** — send the last 20 log lines to Claude for instant analysis (optional, requires Anthropic API key)
+- **AI log analysis** — send the last 20 log lines to an LLM for structured diagnostics: issues found (with severity), security alerts, performance notes, and recommended actions (optional, requires AMD internal LLM access)
 - **Log rotation safe** — uses `tail -F` so streams continue seamlessly after log rotation
 
 ---
@@ -52,17 +52,17 @@ python3 -m venv venv
 source venv/bin/activate
 
 # On WSL2 / systems with SSL cert issues:
-pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org Flask python-dotenv
+pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org Flask python-dotenv openai
 
 # On normal systems:
-pip install Flask python-dotenv
+pip install Flask python-dotenv openai
 ```
 
 ### 2. Configure
 
 ```bash
 cp .env.example .env
-# Edit .env — set LOG_DIR, AGENT_SECRET, and optionally ANTHROPIC_API_KEY
+# Edit .env — set LOG_DIR, AGENT_SECRET, and optionally AMD_SUBSCRIPTION_KEY
 ```
 
 ### 3. Run
@@ -146,9 +146,9 @@ All settings are controlled via `.env`:
 | `LOG_DIR` | `/var/log/apache2` | Directory scanned for `*.log` files (local logs) |
 | `AGENT_SECRET` | `changeme` | Shared secret — agents must send this in `X-Agent-Key` header |
 | `LLM_ENABLED` | `false` | Enable AI log analysis |
-| `ANTHROPIC_API_KEY` | _(empty)_ | Required when `LLM_ENABLED=true` |
-| `LLM_MODEL` | `claude-3-5-haiku-20241022` | Claude model to use for analysis |
-| `LLM_CHUNK_SIZE` | `20` | Number of log lines sent to Claude per analysis request |
+| `AMD_SUBSCRIPTION_KEY` | _(empty)_ | AMD internal LLM subscription key — required when `LLM_ENABLED=true` |
+| `LLM_MODEL` | `GPT-oss-20B` | Model to use for analysis |
+| `LLM_CHUNK_SIZE` | `20` | Number of log lines sent per analysis request |
 | `SECRET_KEY` | `dev-secret-change-me` | Flask session secret |
 | `FLASK_ENV` | `development` | `development` or `production` |
 
@@ -166,7 +166,7 @@ All settings are controlled via `.env`:
 | `POST` | `/api/agent/push` | Receive a log line from a remote agent |
 | `GET` | `/api/logs` | List local log files with paths and sizes |
 | `POST` | `/api/refresh` | Rescan `LOG_DIR` for new log files |
-| `POST` | `/api/analyze` | Analyze log lines with Claude AI |
+| `POST` | `/api/analyze` | Analyze log lines with LLM — returns issues, security alerts, performance notes, and recommended actions |
 
 ---
 
@@ -186,7 +186,7 @@ apache-logmonitoring/
 │   │   ├── agent_registry.py  # In-memory queues for remote agents
 │   │   ├── log_tailer.py      # Local log file tailing
 │   │   ├── log_parser.py      # Apache log line parsing
-│   │   └── llm_hook.py        # Claude AI integration
+│   │   └── llm_hook.py        # LLM integration (AMD internal API, OpenAI-compatible)
 │   ├── static/
 │   │   ├── css/app.css        # Dark theme styles
 │   │   └── js/app.js          # Frontend SPA logic
@@ -203,6 +203,12 @@ apache-logmonitoring/
 
 ## Changelog
 
+### v3.0 — AMD LLM Integration
+- **Changed:** LLM backend switched from Anthropic/Claude to AMD internal OpenAI-compatible API (`https://llm-api.amd.com/OnPrem`)
+- **Changed:** Auth via `Ocp-Apim-Subscription-Key` header; configured through `AMD_SUBSCRIPTION_KEY` in `.env`
+- **Improved:** Structured analysis output — Summary, Issues Found (with severity levels), Security Alerts, Performance Notes, and Recommended Actions
+- **Added:** `openai` Python package dependency
+
 ### v2.0 — Remote Agent Support
 - **New:** `agent/log_agent.py` — lightweight agent for remote Linux servers (stdlib only, no pip required)
 - **New:** `AgentRegistry` — server-side registry managing per-agent log queues
@@ -216,7 +222,7 @@ apache-logmonitoring/
 - Real-time local Apache log streaming via SSE
 - Access and error log parsing
 - Level, status, and keyword filters
-- Optional Claude AI log analysis
+- Optional AI log analysis
 - Log rotation support via `tail -F`
 - Bootstrap 5 dark-theme UI
 
@@ -227,4 +233,4 @@ apache-logmonitoring/
 - Python 3.8+
 - Linux (uses `tail` and `stdbuf` commands)
 - Apache (or use the log simulator for testing)
-- Anthropic API key (optional, for AI analysis)
+- AMD internal LLM access / `AMD_SUBSCRIPTION_KEY` (optional, for AI analysis)

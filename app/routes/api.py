@@ -172,11 +172,11 @@ def analyze():
     max_lines = current_app.config['LLM_CHUNK_SIZE']
     lines = lines[-max_lines:]
 
-    from app.services.llm_hook import analyze_with_claude
+    from app.services.llm_hook import analyze_with_llm
     try:
-        result = analyze_with_claude(
+        result = analyze_with_llm(
             log_lines=lines,
-            api_key=current_app.config['ANTHROPIC_API_KEY'],
+            subscription_key=current_app.config['AMD_SUBSCRIPTION_KEY'],
             model=current_app.config['LLM_MODEL'],
         )
         return jsonify(result)
